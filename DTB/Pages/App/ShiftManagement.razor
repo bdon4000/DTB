@@ -1,0 +1,133 @@
+﻿@page "/shift-management"
+@inherits ProComponentBase
+@using Masa.Blazor
+@using Masa.Blazor.Presets
+@using DTB.Data.Devices
+@using DTB.Services
+@using Microsoft.AspNetCore.Components
+@using System.Collections.Generic
+@using System.Threading.Tasks
+@using DTB.Data.Devices
+@using DTB.Service
+@inject IShiftService ShiftService
+@inject IPopupService PopupService
+
+<MCard>
+    <MCardTitle>Shift Management</MCardTitle>
+    <MCardText>
+        <MDataTable Items="@shifts" Headers="@headers" Class="elevation-1">
+            <ItemColContent>
+                @if (context.Header.Value == "actions")
+                {
+                    <MButton Color="primary" Small OnClick="() => EditShift(context.Item)">Edit</MButton>
+                    <MButton Color="error" Small OnClick="() => DeleteShift(context.Item.Id)">Delete</MButton>
+                }
+                else
+                {
+                    @context.Value
+                }
+            </ItemColContent>
+        </MDataTable>
+
+        <MButton Color="primary" Class="mt-4" OnClick="() => ShowDialog()">Add New Shift</MButton>
+
+        <MDialog @bind-Value="dialog" MaxWidth="500">
+            <MCard>
+                <MCardTitle>@(editingShift?.Id > 0 ? "Edit Shift" : "Add New Shift")</MCardTitle>
+                <MCardText>
+                    <MTextField @bind-Value="currentShift.ShiftName" Label="Shift Name"></MTextField>
+                    <MTextField @bind-Value="currentShift.StartTime" Label="Start Time" Type="time"></MTextField>
+                    <MTextField @bind-Value="currentShift.EndTime" Label="End Time" Type="time"></MTextField>
+                    <MTextField @bind-Value="currentShift.PlanOutput" Label="Plan Output" Type="number"></MTextField>
+                </MCardText>
+                <MCardActions>
+                    <MButton Color="primary" OnClick="SaveShift">Save</MButton>
+                    <MButton Color="error" OnClick="() => dialog = false">Cancel</MButton>
+                </MCardActions>
+            </MCard>
+        </MDialog>
+    </MCardText>
+</MCard>
+
+@code {
+    private List<Shift> shifts = new();
+    private List<DataTableHeader<Shift>> headers = new()
+    {
+        new() { Text = "Shift Name", Value = nameof(Shift.ShiftName) },
+        new() { Text = "Start Time", Value = nameof(Shift.StartTime) },
+        new() { Text = "End Time", Value = nameof(Shift.EndTime) },
+        new() { Text = "Plan Output", Value = nameof(Shift.PlanOutput) },
+        new() { Text = "Actions", Value = "actions", Sortable = false }
+    };
+    private bool dialog;
+    private Shift currentShift = new();
+    private Shift? editingShift;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadShifts();
+    }
+
+    private async Task LoadShifts()
+    {
+        shifts = await ShiftService.GetAllShiftsAsync();
+    }
+
+    private void ShowDialog(Shift? shift = null)
+    {
+        editingShift = shift;
+        currentShift = shift != null ? new Shift
+            {
+                Id = shift.Id,
+                ShiftName = shift.ShiftName,
+                StartTime = shift.StartTime,
+                EndTime = shift.EndTime,
+                PlanOutput = shift.PlanOutput,
+                IsActive = shift.IsActive
+            } : new Shift();
+        dialog = true;
+    }
+
+    private void EditShift(Shift shift)
+    {
+        ShowDialog(shift);
+    }
+
+    private async Task SaveShift()
+    {
+        try
+        {
+            if (editingShift != null)
+            {
+                await ShiftService.UpdateShiftAsync(currentShift);
+                await PopupService.EnqueueSnackbarAsync("Shift updated successfully", AlertTypes.Success);
+            }
+            else
+            {
+                await ShiftService.CreateShiftAsync(currentShift);
+                await PopupService.EnqueueSnackbarAsync("Shift created successfully", AlertTypes.Success);
+            }
+            dialog = false;
+            await LoadShifts();
+        }
+        catch (Exception ex)
+        {
+            await PopupService.EnqueueSnackbarAsync($"{ex.Message}", AlertTypes.Error);
+        }
+    }
+
+    private async Task DeleteShift(int id)
+    {
+        try
+        {
+            await ShiftService.DeleteShiftAsync(id);
+            await PopupService.EnqueueSnackbarAsync("Shift deleted successfully", AlertTypes.Success);
+            await LoadShifts();
+        }
+        catch (Exception ex)
+        {
+            await PopupService.EnqueueSnackbarAsync($"{ex.Message}", AlertTypes.Error);
+
+        }
+    }
+}

@@ -1,0 +1,258 @@
+﻿@page "/battery/tracking"
+@using System.Reflection
+@using DTB.Data
+@using DTB.Data.BatteryData
+@using DTB.Data.BatteryData.BaseModel
+@using Microsoft.EntityFrameworkCore
+
+@inject IDbContextFactory<BatteryDbContext> DbContextFactory
+
+<MContainer>
+    <!-- Search Bar -->
+    <MRow Class="mb-4">
+        <MCol Cols="12">
+            <MCard Outlined Class="pa-4">
+                <div class="d-flex align-center">
+                    <div class="flex-grow-1">
+                        <MTextField @bind-Value="searchCode"
+                                    Label="电池编码"
+                                    Placeholder="请输入电池编码进行查询..."
+                                    HideDetails="@("auto")"
+                                    Dense
+                                    Outlined
+                                    BackgroundColor="white"
+                                    ClearIcon="mdi-close-circle"
+                                    Clearable
+                                    OnKeyUp="@(async e => { if (e.Key == "Enter") await SearchBattery(); })" />
+                    </div>
+                    <MButton Color="primary"
+                             OnClick="SearchBattery"
+                             Height="32"
+                             Class="ml-4"
+                             MinWidth="120">
+                        <MIcon Small Left>mdi-magnify</MIcon>
+                        查询
+                    </MButton>
+                </div>
+            </MCard>
+        </MCol>
+    </MRow>
+
+    @if (batteryRelation != null)
+    {
+        <MRow Dense>
+            @foreach (var processGroup in ProcessGroups)
+            {
+                <MCol Cols="12" Class="mb-2">
+                    <MCard Outlined Class="process-group-card">
+                        <MCardTitle Class="py-1 px-4 grey lighten-4">
+                            <span class="text-subtitle-1">@processGroup.Code</span>
+                        </MCardTitle>
+                        <MCardText Class="pa-2">
+                            <div class="d-flex flex-wrap gap-1">
+                                @foreach (var processItem in processGroup.ProcessItems)
+                                {
+                                    <div class="flex-grow-1" style="min-width: 400px; max-width: calc(33.33% - 4px);">
+                                        <DynamicComponent Type="@processItem.ComponentType"
+                                                          Parameters="@(new Dictionary<string, object>
+                                                        {
+                                                            { "Code", processGroup.Code ?? string.Empty },
+                                                            { "Title", processItem.Title },
+                                                            { "DeviceCode", processItem.DeviceCode }
+                                                        })" />
+                                    </div>
+                                }
+                            </div>
+                        </MCardText>
+                    </MCard>
+                </MCol>
+            }
+        </MRow>
+    }
+    else
+    {
+        <MRow Justify="JustifyTypes.Center" Class="mt-6">
+            <MCol Cols="12" Md="8" Lg="6">
+                <MCard Class="pa-4" Outlined>
+                    <MCardText Class="text-subtitle-1 text-center text-medium-emphasis">
+                        Enter a battery code to view process data
+                    </MCardText>
+                </MCard>
+            </MCol>
+        </MRow>
+    }
+</MContainer>
+
+<style>
+    .process-group-card :deep(.m-card__text) {
+        padding: 4px !important;
+    }
+</style>
+
+@code {
+    private string searchCode = "";
+    private BatteryRelation? batteryRelation;
+    private List<ProcessGroup> ProcessGroups = new List<ProcessGroup>();
+
+    private static readonly Dictionary<Type, (string Name, string CodeProperty, string DevicePrefix)> BaseModelMappings =
+        new()
+            {
+            {
+                typeof(JellyBaseModel),
+                ("Jelly Process", nameof(BatteryRelation.JellyCode), "Jelly")
+            },
+            {
+                typeof(ShellBaseModel),
+                ("Shell Process", nameof(BatteryRelation.ShellCode), "Shell")
+            },
+            {
+                typeof(FilmBaseModel),
+                ("Film Process", nameof(BatteryRelation.FilmCode), "Film")
+            }
+            };
+
+    private static readonly Dictionary<Type, (Type PrimaryGroup, string DevicePrefix)> CompositeModelMappings =
+        new()
+            {
+            {
+                typeof(JellyShellBaseModel),
+                (typeof(ShellBaseModel), "JellyShell")
+            },
+            {
+                typeof(ShellFilmBaseModel),
+                (typeof(FilmBaseModel), "ShellFilm")
+            }
+            };
+
+    protected override void OnInitialized()
+    {
+        InitializeProcessGroups();
+    }
+
+    private void InitializeProcessGroups()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var dataTypes = assembly.GetTypes()
+            .Where(t => t.Namespace == "DTB.Data.BatteryData" &&
+                       !t.IsAbstract &&
+                       t.Name.EndsWith("Data"))
+            .ToList();
+
+        ProcessGroups = BaseModelMappings
+            .Select(mapping =>
+            {
+                var baseType = mapping.Key;
+                var (name, codeProperty, devicePrefix) = mapping.Value;
+
+                var processTypes = new List<ProcessItem>();
+
+                // Add regular process types
+                processTypes.AddRange(dataTypes
+                    .Where(t => baseType.IsAssignableFrom(t) && t != baseType &&
+                           !IsCompositeType(t))
+                    .Select(type => CreateProcessItem(type, devicePrefix)));
+
+                // Add composite process types that belong to this group
+                var compositeTypes = CompositeModelMappings
+                    .Where(cm => cm.Value.PrimaryGroup == baseType)
+                    .SelectMany(cm => dataTypes
+                        .Where(t => cm.Key.IsAssignableFrom(t) && t != cm.Key)
+                        .Select(type => CreateProcessItem(type, cm.Value.DevicePrefix)));
+
+                processTypes.AddRange(compositeTypes);
+
+                return new ProcessGroup
+                    {
+                        Name = name,
+                        CodeProperty = codeProperty,
+                        ProcessItems = processTypes
+                                .OrderBy(p => GetProcessOrder(p.DataType.Name, p.DeviceCode))
+                                .ToList()
+                    };
+            })
+            .Where(group => group.ProcessItems.Any())
+            .ToList();
+    }
+
+    private ProcessItem CreateProcessItem(Type type, string devicePrefix)
+    {
+        return new ProcessItem
+            {
+                DataType = type,
+                Title = FormatTitle(type.Name),
+                DeviceCode = GetDeviceCode(type.Name, devicePrefix),
+                ComponentType = typeof(ProcessCard<>).MakeGenericType(type)
+            };
+    }
+
+    private int GetProcessOrder(string typeName, string deviceCode)
+    {
+        if (typeName.Contains("ShellInsertingData"))
+            return -2;
+        if (typeName.Contains("InkjetPrintingData"))
+            return -1;
+
+        var numbers = System.Text.RegularExpressions.Regex.Match(deviceCode, @"\d+");
+        return numbers.Success ? int.Parse(numbers.Value) : int.MaxValue;
+    }
+
+    private bool IsCompositeType(Type type)
+    {
+        return CompositeModelMappings.Keys.Any(compositeType =>
+            compositeType.IsAssignableFrom(type) && type != compositeType);
+    }
+
+    private string FormatTitle(string typeName)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(
+            typeName.Replace("Data", ""),
+            "([A-Z])",
+            " $1",
+            System.Text.RegularExpressions.RegexOptions.Compiled
+        ).Trim();
+    }
+
+    private string GetDeviceCode(string typeName, string prefix)
+    {
+        return typeName.Replace("Data", "");
+    }
+
+    private async Task SearchBattery()
+    {
+        if (string.IsNullOrWhiteSpace(searchCode))
+            return;
+
+        await using var context = await DbContextFactory.CreateDbContextAsync();
+        batteryRelation = await context.BatteryRelations
+            .FirstOrDefaultAsync(b =>
+                b.JellyCode == searchCode ||
+                b.ShellCode == searchCode ||
+                b.FilmCode == searchCode);
+
+        if (batteryRelation != null)
+        {
+            foreach (var group in ProcessGroups)
+            {
+                group.Code = batteryRelation.GetType()
+                    .GetProperty(group.CodeProperty)
+                    ?.GetValue(batteryRelation) as string;
+            }
+        }
+    }
+
+    private class ProcessGroup
+    {
+        public string Name { get; set; }
+        public string CodeProperty { get; set; }
+        public string? Code { get; set; }
+        public List<ProcessItem> ProcessItems { get; set; } = new List<ProcessItem>();
+    }
+
+    private class ProcessItem
+    {
+        public Type DataType { get; set; }
+        public Type ComponentType { get; set; }
+        public string Title { get; set; }
+        public string DeviceCode { get; set; }
+    }
+}

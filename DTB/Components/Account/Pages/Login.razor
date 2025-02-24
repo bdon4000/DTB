@@ -1,0 +1,67 @@
+﻿@page "/account/login"
+@layout EmptyLayout
+
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using DTB.Data.App.User
+@using DTB.Components.Account
+
+@inject UserManager<AppUser> UserManager
+@inject IUserStore<AppUser> UserStore
+@inject SignInManager<AppUser> SignInManager
+
+@inject NavigationManager NavigationManager
+@inject IPopupService PopupService
+@inject IdentityRedirectManager RedirectManager
+@inject CookieStorage CookieStorage
+
+<div class="d-flex align-center" style="height:calc(100% - 96px)">
+    <MCard Width=510 Height=680 Class="mx-auto my-auto">
+        <div style="height:60px;"></div>
+        <div class="mt-2 mx-auto text-center" style="width:420px;">
+            <MAvatar Size=80>
+                <MImage Src="/img/avatar/1.svg">
+                </MImage>
+            </MAvatar>
+            <h5 class="mt-2 mb-12">Welcome to DTB! 👋</h5>
+
+            <MTextField TValue="string"
+                        Label="UserName"
+                        Placeholder="Z1234"
+                        Outlined
+                        HideDetails="@("auto")"
+                        @bind-Value="UserName">
+            </MTextField>
+            <MTextField TValue="string"
+                        Class="mt-10"
+                        Label="Password"
+                        Type="@(_show ? "text" : "password")"
+                        Placeholder="john@example.com"
+                        AppendIcon="@(_show ? "mdi-eye" : "mdi-eye-off")"
+                        OnAppendClick="() => _show = !_show"
+                        Outlined
+                        HideDetails="@("auto")"
+                        @bind-Value="Password">
+            </MTextField>
+            <span class="d-flex justify-end mt-1 text-caption hover-pointer">
+                Forgot Password?
+            </span>
+            <MButton Class="mt-11 rounded-4 text-btn white--text" OnClick=LoginClicked Height=46 Width=340 Color="primary">Login</MButton>
+
+            <div class="my-6">
+                <span class="text-btn">New on our platform? &nbsp;</span>
+                <NavLink href="@CreateAccountRoute" class="primary--text hover-pointer">Create an account</NavLink>
+            </div>
+        </div>
+    </MCard>
+
+</div>
+
+<MFooter Padless Height=96 Style="background:transparent;">
+    <MRow Justify="JustifyTypes.Center">
+        <a href="http://www.sz-zhongji.com.cn/" target="_blank" class="neutral-lighten-3--text" style="text-decoration:none;font-size:14px;">深圳市中基自动化股份有限公司</a>
+    </MRow>
+</MFooter>

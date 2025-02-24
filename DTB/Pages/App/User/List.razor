@@ -1,0 +1,235 @@
+﻿@page "/app/user/list"
+@inherits ProComponentBase
+@inject NavigationManager Nav
+@using DTB.Data.App.User
+@using DTB.Components.Account
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using System.Security.Claims
+@inject UserManager<AppUser> UserManager
+@inject IUserStore<AppUser> UserStore
+@inject SignInManager<AppUser> SignInManager
+@inject NavigationManager NavigationManager
+@inject IPopupService PopupService
+@inject IdentityRedirectManager RedirectManager
+@inject CookieStorage CookieStorage
+
+<MCard>
+    <MCardText Class="pa-6">
+        <h6>@T("Filters")</h6>
+        <MRow Class="mt-3">
+            <MCol Sm=12 Md=4>
+                <MSelect @bind-Value="_userPage.Role"
+                         Color="primary"
+                         HideDetails="@("auto")"
+                         Clearable
+                         Outlined
+                         Items="@UserService.GetRoleList()"
+                         ItemText="u => u"
+                         ItemValue="u => u"
+                         Label=@T("Role")>
+                </MSelect>
+            </MCol>
+            <MCol Sm=12 Md=4>
+                <MSelect @bind-Value="_userPage.Status"
+                         Color="primary"
+                         HideDetails="@("auto")"
+                         Clearable
+                         Outlined
+                         Items="@UserService.GetStatusList()"
+                         ItemText="u => u"
+                         ItemValue="u => u"
+                         Label=@T("Status")>
+                </MSelect>
+            </MCol>
+        </MRow>
+    </MCardText>
+</MCard>
+
+<MCard Class="mt-6">
+    <MCardText Class="pa-6">
+        <MRow>
+            <MCol Md=6 Sm=12 Class="d-flex block-center">
+                <span class="text-btn neutral-lighten-1--text">@T("Show"):</span>
+                <MSelect @bind-Value="_userPage.PageSize"
+                         Color="primary"
+                         Style="max-width:120px;"
+                         Dense
+                         Class="mx-6"
+                         HideDetails="@("auto")"
+                         Outlined
+                         Items="@_pageSizes"
+                         ItemText="u => u.ToString()"
+                         ItemValue="u => u">
+                </MSelect>
+                
+            </MCol>
+            <MCol Md=6 Sm=12 Class="d-flex block-center">
+                <MTextField @bind-Value="_userPage.Search" Color="primary" Class="rounded-2" HideDetails="@("auto")" Flat Dense Solo BackgroundColor="fill-lighten-1" Placeholder="Search">
+                    <PrependInnerContent>
+                        <MIcon Size=16 Class="mr-2 neutral-lighten-1--text">mdi-magnify</MIcon>
+                    </PrependInnerContent>
+                </MTextField>
+                <MButton Color="primary" MinWidth=80 Height=32 Class="ml-6 rounded-pill" OnClick="()=>_visible=true">
+                    @T("Add")@T("User")
+                </MButton>
+            </MCol>
+        </MRow>
+    </MCardText>
+
+    <MDataTable Headers="_headers" Items="_userPage.GetPageDatas()" TItem="AppUser" ItemsPerPage="_userPage.PageSize" HideDefaultFooter Class="user ml-2 table-border-none">
+        <HeaderColContent Context="header">
+            <span class="text-subtitle">@header.Text</span>
+        </HeaderColContent>
+        <ItemColContent>
+            @switch (context.Header.Value)
+            {
+                case nameof(AppUser.UserName):
+                    <div class="hover-pointer d-flex my-2" @onclick="()=>NavigateToEdit(context.Item.Id)">
+                        @if (string.IsNullOrEmpty(context.Item.Avatar))
+                        {
+
+                            string color = "sample-green";
+
+                            <MAvatar Size=48 Color="@($"{color}-lighten-5")" Class="mt-1">
+                                <span class="@($"{color}--text")">@context.Item.UserName</span>
+                            </MAvatar>
+                        }
+                        else
+                        {
+                            <MAvatar Size=48 Class="mt-1">
+                                <MImage Contain Src="@context.Item.Avatar"></MImage>
+                            </MAvatar>
+                        }
+                        <div class="ml-4">
+                            <div class="text-subtitle">@context.Item.UserName</div>
+                            <div class="text-caption mt-1">@@@context.Item.UserName</div>
+                        </div>
+                    </div>
+                    break;
+                case (nameof(AppUser.Email)):
+                    <span>@context.Item.Email</span>
+                    break;
+                case nameof(AppUser.Role):
+                    var arr = _roleIconMap[context.Item.Role!].Split(",");
+                    <MIcon Left Small Class="@($"{arr[1]}--text")">@arr[0]</MIcon>
+                    @context.Item.Role
+                    break;
+                case nameof(AppUser.Status):
+                    string statusColor = getColor(context.Item.Status);
+                    <MChip Color="@($"{statusColor}-lighten-5")" TextColor="@(statusColor)" Ripple="false">
+                        <span>@context.Item.Status</span>
+                    </MChip>
+                    break;
+                case "Action":
+                    <MMenu Right Bottom>
+                        <ActivatorContent Context="activatorContext">
+                            <MButton Icon @attributes="@activatorContext.Attrs">
+                                <MIcon XSmall>fa:fas fa-ellipsis-v</MIcon>
+                            </MButton>
+                        </ActivatorContent>
+                        <ChildContent>
+                            <MList>
+                                <MListItem OnClick="()=>NavigateToEdit(context.Item.Id)">
+                                    <MIcon Small>fa:far fa-edit</MIcon>
+                                    <MListItemTitle Class="ml-2"> @T("Edit") </MListItemTitle>
+                                </MListItem>
+                                <MListItem OnClick="()=>DeleteUserAsync(context.Item)">
+                                    <MIcon Small>fa:far fa-trash-alt</MIcon>
+                                    <MListItemTitle Class="ml-2"> @T("Delete") </MListItemTitle>
+                                </MListItem>
+                            </MList>
+                        </ChildContent>
+                    </MMenu>
+                    break;
+                default:
+                    @context.Value
+                    break;
+            }
+        </ItemColContent>
+    </MDataTable>
+
+    <MCardText>
+        <div class="d-flex">
+            <div class="mr-auto pt-3 text-btn neutral-lighten-1--text">Showing @((_userPage.PageIndex - 1) * _userPage.PageSize + 1) to @(_userPage.PageIndex * _userPage.PageSize) of @_userPage.CurrentCount entries</div>
+            @if (_userPage.PageCount > 0)
+            {
+                <MPagination @bind-Value="_userPage.PageIndex" Color="primary" Circle Length=@_userPage.PageCount></MPagination>
+            }
+        </div>
+    </MCardText>
+</MCard>
+<!-- Delete confirmation dialog -->
+<MDialog @bind-Value="_showDeleteDialog" MaxWidth="400">
+    <MCard>
+        <MCardTitle Class="headline">确认删除</MCardTitle>
+        <MCardText>
+            您确定要删除用户 "@_userToDelete?.UserName" 吗？此操作无法撤销。
+        </MCardText>
+        <MCardActions>
+            <MSpacer></MSpacer>
+            <MButton Text OnClick="CancelDelete">取消</MButton>
+            <MButton Color="error" Text OnClick="ConfirmDelete">删除</MButton>
+        </MCardActions>
+    </MCard>
+</MDialog>
+
+<!--<Add @bind-Visible=_visible Submit="AddUserData"></Add>-->
+@code {
+    private bool _showDeleteDialog = false;
+    private AppUser? _userToDelete;
+
+    // Your existing code ...
+
+    private async Task DeleteUserAsync(AppUser user)
+    {
+        _userToDelete = user;
+        _showDeleteDialog = true;
+    }
+
+    private void CancelDelete()
+    {
+        _userToDelete = null;
+        _showDeleteDialog = false;
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (_userToDelete != null)
+        {
+            try
+            {
+                var result = await UserManager.DeleteAsync(_userToDelete);
+                if (result.Succeeded)
+                {
+                    // 从页面数据中移除用户
+                    _userPage.UserDatas.RemoveAll(u => u.Id == _userToDelete.Id);
+                    await PopupService.EnqueueSnackbarAsync("用户已成功删除", AlertTypes.Success);
+                }
+                else
+                {
+                    var errors = string.Join("\n", result.Errors.Select(e => e.Description));
+                    await PopupService.EnqueueSnackbarAsync($"删除失败: {errors}", AlertTypes.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                await PopupService.EnqueueSnackbarAsync($"删除时发生错误: {ex.Message}", AlertTypes.Error);
+            }
+        }
+
+        _userToDelete = null;
+        _showDeleteDialog = false;
+        StateHasChanged();
+    }
+
+    // Add this if you need to refresh the user list after deletion
+    private async Task RefreshUserList()
+    {
+        // Implement your refresh logic here
+        StateHasChanged();
+    }
+}

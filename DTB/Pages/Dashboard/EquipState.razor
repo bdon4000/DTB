@@ -1,0 +1,674 @@
+﻿@page "/dashboard/equipstate/{DeviceCode}"
+
+@using DTB.Data.BatteryData.BaseModel
+@using DTB.Data.Devices
+@using DTB.Data.DataBase
+@using DTB.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Identity
+@using DTB.Service
+@inject UserManager<AppUser> UserManager
+@inherits ProComponentBase
+@inject MasaBlazor MasaBlazor
+@inject NavHelper NavHelper;
+@inject IDbContextFactory<BatteryDbContext> DbContextFactory
+@implements IDisposable
+@inject DeviceStatusCacheFactory CacheFactory
+@inject IConfiguration Configuration
+@inject IShiftService ShiftService
+@if (isLoading)
+{
+    <MProgressCircular Indeterminate="true" Class="mt-4" />
+}
+else
+{
+    <MRow>
+        <MCol Md=2 Sm=12>
+            <MCard Height=146 Class="d-flex">
+                @* 统一高度为150px *@
+                <MCardText Class="flex-grow-1">
+                    <MRow Class="fill-height" NoGutters>
+                        <MCol Cols="7" Class="d-flex flex-column justify-space-between">
+                            <div>
+                                <span class="text-btn neutral-lighten-4--text">@T("DeviceName")</span>
+                                <h5 class="mt-1">@deviceStatus?.DeviceInfo?.DeviceName</h5>
+                                <div class="mt-3">
+                                    <span class="text-btn neutral-lighten-4--text">@T("CurrentShift")</span>
+                                    <div class="mt-1">
+                                        <span class="subtitle-2">@currentShift?.ShiftName</span>
+                                        <span class="ml-2 text-caption">
+                                            (@currentShift.StartTime - @currentShift.EndTime)
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </MCol>
+                        <MCol Cols="5" Class="d-flex align-center justify-center">
+                            <MImage Src="@deviceStatus?.DeviceInfo?.DeviceAvatar"
+                                    Width="80"
+                                    Height="80"
+                                    Contain>
+                            </MImage>
+                        </MCol>
+                    </MRow>
+                </MCardText>
+            </MCard>
+        </MCol>
+        <MCol Md=2 Sm=12>
+            <MCard Height=146 Class="d-flex">
+                <MCardText>
+                    <MRow Class="max-height" NoGutters>
+                        <MCol>
+                            <span class="text-btn neutral-lighten-4--text">@T("DeviceState")</span>
+                            <h5 class="mt-1">@T(statusInfo.Name)</h5>
+                            @if (deviceStatus?.Status == 2) // Error状态
+                            {
+                                <div class="error-code mt-1" style="color: red;">
+                                    Error: @deviceStatus.ErrorMsg
+                                </div>
+                            }
+                            <div class="text-caption mt-1" style="color: #666;">
+                                Last Updated: @(deviceStatus?.UpdateTime.ToString("yyyy-MM-dd HH:mm:ss"))
+                            </div>
+                        </MCol>
+                        <MCol>
+                            <MImage Src=@statusInfo.ImagePath
+                            style="width: 100%; height: auto;">
+                            </MImage>
+                        </MCol>
+                    </MRow>
+                </MCardText>
+            </MCard>
+        </MCol>
+        <MCol Md=2 Sm=12>
+            <MCard Height=146 Class="d-flex">
+                <MCardText>
+                    <MRow Class="max-height" NoGutters>
+                        <MCol>
+                            <span class="text-btn neutral-lighten-4--text">@T("OperatorInfo")</span>
+                            @if (deviceStatus != null && currentOperator != null)
+                            {
+                                <h5 class="mt-1">@currentOperator.FullName</h5>
+                                <div class="text-caption mt-1" style="color: #666;">
+                                    Last Active: @deviceStatus.UpdateTime.ToString("HH:mm:ss")
+                                </div>
+                                @if (!string.IsNullOrEmpty(currentOperator.Role))
+                                {
+                                    <div class="text-caption" style="color: #666;">
+                                        Role: @currentOperator.Role
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <h5 class="mt-1">@T("NoOperator")</h5>
+                            }
+                        </MCol>
+                        <MCol Class="block-center">
+                            @if (currentOperator?.Avatar != null)
+                            {
+                                <MImage Src=@currentOperator.Avatar
+                                style="width: 100%; height: auto;">
+                                </MImage>
+                            }
+                            else
+                            {
+                                <MImage Src="/img/avatar/deauftavatar.svg"
+                                style="width: 100%; height: auto; ">
+                                </MImage>
+                            }
+                        </MCol>
+                    </MRow>
+                </MCardText>
+            </MCard>
+        </MCol>
+
+        <MCol Md=2 Sm=12>
+            <MCard Height=146 Class="d-flex">
+                <MCardText Class="flex-grow-1">
+                    <MRow Class="fill-height" NoGutters>
+                        <MCol>
+                            <span class="text-btn neutral-lighten-4--text">@T("PPM")</span>
+                            <div class="d-flex align-center mt-2">
+                                <h5 class="mb-0">@(deviceStatus?.SmoothedPPM.ToString("F1") ?? "0")</h5>
+
+                            </div>
+                            <div class="text-caption mt-1" style="color: #666;">
+                                Real-time: @(deviceStatus?.PPM.ToString("F1") ?? "0")
+                            </div>
+                        </MCol>
+                        <MCol>
+                            <div style="height: 120px; width: 120px;" class="mx-auto">
+                                <MECharts Style="height: 100%; width: 100%;"
+                                Option="@GetPPMGaugeChart(deviceStatus?.SmoothedPPM ?? 0,
+                                                            deviceStatus?.DeviceInfo?.StandardPPM ?? 100)">
+                                </MECharts>
+                            </div>
+                        </MCol>
+                    </MRow>
+                </MCardText>
+            </MCard>
+        </MCol>
+        <MCol Md=4 Sm=12>
+            <MCard Height=146 Class="d-flex">
+                <MCardText Class="flex-grow-1">
+                    <MRow Class="max-height" NoGutters>
+                        <MCol Cols="3">
+                            <span class="text-btn neutral-lighten-4--text">@T("ElectricMeter")</span>
+                            <div class="d-flex align-center mt-2">
+                                <h5 class="mb-0">@TotalElectricMeter.ToString("F1")</h5>
+                                <span class="ml-1 text-caption">kW·h</span>
+                            </div>
+                            <div class="text-caption mt-1" style="color: #666;">
+                                Current Shift Total
+                            </div>
+                        </MCol>
+                        <MCol Cols="9">
+                            <div style="height: 130px;" class="mx-auto">
+                                <MECharts Style="height: 100%; width: 100%;"
+                                Option="@_electricMeterChartOption">
+                                </MECharts>
+                            </div>
+                        </MCol>
+                    </MRow>
+                </MCardText>
+            </MCard>
+        </MCol>
+    </MRow>
+
+    <MRow>
+        <MCol Md=8 Sm=12>
+            <MRow NoGutters Class="max-height">
+                <MCol Md=8 Sm=12>
+                    <MCard Class="max-height" Style="border-radius:20px 0px 0px 20px !important;">
+                        <MCardText>
+                            <MECharts Height=326 Width="@("100%")" Option="@_productionChartOption"></MECharts>
+                        </MCardText>
+                    </MCard>
+                </MCol>
+                <MCol Md=4 Sm=12>
+                    <MCard Class="max-height" Style="box-shadow: -1px 0px 0px rgba(67, 24, 255, 0.1) !important;border-radius: 0px 20px 20px 0px !important;">
+                        <MCardText>
+                            <div class="block-between">
+                                <h4 class="neutral--text">@TotalProduction</h4>
+                                @{
+                                    var ngRate = float.Parse(TotalNgRate);
+                                    var okRate = 100 - ngRate;
+                                }
+                                <h6 class="@(ngRate <= 5 ? "success--text" : "error--text")">@okRate%</h6>
+                                <span class="text-caption primary--text">
+                                    <span class="mr-4">@T("ShowOKs")</span>
+                                    <MButton Icon
+                                    Small
+                                    Color="@(selectedStates["OK"] ? "primary" : "grey")"
+                                    OnClick="ToggleOkData">
+                                        <MIcon>mdi-check-circle</MIcon>
+                                    </MButton>
+                                </span>
+                            </div>
+
+                            <div class="mt-5" style="height:200px;">
+                                <MECharts Height="@("150%")" Option="@_ngChartOption"></MECharts>
+                            </div>
+
+                        </MCardText>
+                    </MCard>
+                </MCol>
+            </MRow>
+        </MCol>
+        <MCol Md=4 Sm=12>
+            <MCard Class="max-height" >
+                <MCardText>
+                    <div class="d-flex align-center justify-space-between mb-2">
+                        <h6>@T("OEEStatistics")</h6>
+                    </div>
+
+                    <!-- 时间统计 -->
+                    <div class="mt-2 pa-2" style="background-color: #E8F5E9; border-radius: 4px;">
+                        <div class="d-flex justify-space-between align-center">
+                            <span>Total time</span>
+                            <span>@((GetTotalTimeInMinutes() / 60.0).ToString("F1")) hours</span>
+                        </div>
+                    </div>
+
+                    <!-- 可用性统计 -->
+                    @{
+                        var availability = CalculateAvailability();
+                        var performance = CalculatePerformance();
+                        var quality = CalculateQuality();
+                    }
+                    <div class="mt-2">
+                        <div class="d-flex align-center mb-1">
+                            <span class="font-weight-medium">@T("Availability")</span>
+                            <MSpacer></MSpacer>
+                            <span class="@GetColorClass(availability)">@availability.ToString("F1")%</span>
+                        </div>
+                        <MProgressLinear Value="@availability"
+                                         Color="@(availability >= 90 ? "success" : availability >= 70 ? "warning" : "error")"
+                                         Height="20">
+                            <div class="white--text px-2" style="font-size: 12px;">
+                                @T("UtilizedTime")
+                            </div>
+                        </MProgressLinear>
+                    </div>
+
+                    <!-- 性能统计 -->
+                    <div class="mt-4">
+                        <div class="d-flex align-center mb-1">
+                            <span class="font-weight-medium">@T("Performance")</span>
+                            <MSpacer></MSpacer>
+                            <span class="@GetColorClass(performance)">@performance.ToString("F1")%</span>
+                        </div>
+                        <MProgressLinear Value="@performance"
+                                         Color="@(performance >= 90 ? "success" : performance >= 70 ? "warning" : "error")"
+                                         Height="20">
+                            <div class="white--text px-2" style="font-size: 12px;">
+                                @T("ActualvsTheoretical")
+                            </div>
+                        </MProgressLinear>
+                    </div>
+
+                    <!-- 质量统计 -->
+                    <div class="mt-4">
+                        <div class="d-flex align-center mb-1">
+                            <span class="font-weight-medium">@T("Quality") </span>
+                            <MSpacer></MSpacer>
+                            <span class="@GetColorClass(quality)">@quality.ToString("F1")%</span>
+                        </div>
+                        <MProgressLinear Value="@quality"
+                                         Color="@(quality >= 90 ? "success" : quality >= 70 ? "warning" : "error")"
+                                         Height="20">
+                            <div class="white--text px-2" style="font-size: 12px;">
+                                @T("GoodPartsRate")
+                            </div>
+                        </MProgressLinear>
+                    </div>
+
+                    <!-- OEE 总计 -->
+                    <div class="mt-4 pa-3" style="background-color: #E3F2FD; border-radius: 4px;">
+                        <div class="d-flex justify-space-between align-center">
+                            <span class="text-h6">OEE</span>
+                            @{
+                                var oee = CalculateOEE();
+                            }
+                            <span class="text-h6 @GetColorClass(oee)">@oee.ToString("F1")%</span>
+                        </div>
+                    </div>
+                </MCardText>
+            </MCard>
+        </MCol>
+    </MRow>
+    <MRow>
+        <MCol Md=8 Sm=12>
+            <MRow NoGutters Class="max-height">
+                <MCol Md=6 Sm=12>
+                    <MCard Class="max-height" Style="border-radius:20px 0px 0px 20px !important;">
+                            <MCardText Class="pt-3">
+                                @* <div class="d-flex justify-space-between align-center mb-2"> *@
+                                @*     <h6>Recent Battery Data</h6> *@
+                                @*     <span class="text-caption">Last 100 records</span> *@
+                                @* </div> *@
+
+                                @if (deviceStatus?.BatteryDataBuff != null && deviceStatus.BatteryDataBuff.Any())
+                                {
+                                <MDataTable Headers="_batteryDataHeaders"
+                                            Items="deviceStatus.BatteryDataBuff"
+                                            Height="250"
+                                            Dense>
+                                    <ItemColContent>
+                                        @switch (context.Header.Value)
+                                        {
+                                            case "updateTime":
+                                                <span style="font-size: 12px;">@context.Item.updateTime.ToString("HH:mm:ss")</span>
+                                                break;
+                                            case "result":
+                                                @if (context.Item.result)
+                                                {
+                                                    <MIcon Small Color="success" Size="12" Style="min-width: 12px; min-height: 12px;">mdi-check-circle</MIcon>
+                                                }
+                                                else
+                                                {
+                                                    <div class="d-flex align-center" style="gap: 2px; padding: 0;">
+                                                        <MIcon Small Color="error" Size="12" Style="min-width: 12px; min-height: 12px;">mdi-close-circle</MIcon>
+                                                        @if (!string.IsNullOrEmpty(context.Item.ngReason))
+                                                        {
+                                                            <span class="error--text" style="font-size: 11px;">@context.Item.ngReason</span>
+                                                        }
+                                                    </div>
+                                                }
+                                                break;
+                                            default:
+                                                var field = deviceStatus.DeviceInfo?.DeviceData?.FirstOrDefault(f => f.fieldName == context.Header.Value);
+                                                var value = GetParameterValue((FullBaseModel)context.Item, context.Header.Value);
+                                                @if (value != null)
+                                                {
+                                                    var isInRange = true;
+                                                    if (field?.isCPK == true && field.USL.HasValue && field.LSL.HasValue && value is float floatVal)
+                                                    {
+                                                        isInRange = floatVal >= field.LSL.Value && floatVal <= field.USL.Value;
+                                                    }
+                                                    <span class="@(isInRange ? "success--text" : "error--text")" style="font-size: 12px;">
+                                                        @(value is float floatValue ? floatValue.ToString("F2") : value.ToString())
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span style="font-size: 12px;">-</span>
+                                                }
+                                                break;
+                                        }
+                                    </ItemColContent>
+                                </MDataTable>
+
+                                    <div class="d-flex justify-space-between align-center mt-2">
+                                        <!-- 将 mt-4 改为 mt-2 -->
+                                        <div>
+                                            <span class="text-caption">Pass Rate: </span>
+                                            <span class="success--text">
+                                                @(((float)deviceStatus.BatteryDataBuff.Count(x => x.result) / deviceStatus.BatteryDataBuff.Count * 100).ToString("F1"))%
+                                            </span>
+                                        </div>
+                                        <MButton Color="primary"
+                                                 Text
+                                                 Small
+                                                 Class="text-none"
+                                                 OnClick="() => ShowDetailDialog = true">
+                                            View All Data
+                                        </MButton>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="text-center pa-2">
+                                        <span class="text-caption">No data available</span>
+                                    </div>
+                                }
+                            </MCardText>
+                        </MCard>
+                </MCol>
+                @* 替换第二个 OEE card *@
+                <MCol Md=6 Sm=12>
+                    <MCard Class="max-height" Style="box-shadow: -1px 0px 0px rgba(67, 24, 255, 0.1) !important;border-radius: 0px 20px 20px 0px !important;">
+                        <MCardText>
+                            @if (deviceStatus?.DeviceInfo?.DeviceData != null)
+                            {
+                                var cpkFields = deviceStatus.DeviceInfo.DeviceData.Where(f => f.isCPK).ToList();
+                                @if (cpkFields.Any() && deviceStatus.BatteryDataBuff != null && deviceStatus.BatteryDataBuff.Any())
+                                {
+                                    <div class="d-flex justify-space-between align-center mb-2">
+                                        <h6>@T("ProcessCapabilityAnalysis")</h6>
+                                        @if (cpkFields.Count > 1)
+                                        {
+                                            <MSelect Value="_selectedCpkField"
+                                                     ValueChanged="@(EventCallback.Factory.Create<string>(this, HandleCpkFieldChange))"
+                                                     T="string"
+                                                     Items="@cpkFields"
+                                                     ItemText="(item => item.name)"
+                                                     ItemValue="(item => item.fieldName)"
+                                                     Dense
+                                                     HideDetails="true"
+                                                     Class="mx-2"
+                                                     Style="max-width: 150px;" />
+                                        }
+                                    </div>
+                                    @if (_cpkChartOption != null)
+                                    {
+                                        <MECharts Height=230 Option="@_cpkChartOption" />
+
+                                        <div class="mt-4 pa-4 rounded" style="background-color: var(--mud-palette-background-grey)">
+
+                                            <MRow>
+                                                @* CPK Progress *@
+                                                <MCol Cols="4">
+                                                    <MProgressLinear Value="@(Math.Min(_cpk / 2 * 100, 100))"
+                                                                     Color="@(_cpk >= 1.33 ? "success" : _cpk >= 1.0 ? "warning" : "error")"
+                                                                     Height="40"
+                                                                     Rounded
+                                                                     Striped>
+                                                        <div style="position: relative; height: 40px; width: 100%;">
+                                                            <div class="d-flex justify-space-between align-center px-3"
+                                                                 style="height: 100%; position: relative; z-index: 2;">
+                                                                <div class="d-flex align-center">
+                                                                    <span class="text-h6 font-weight-bold"
+                                                                          style="color: rgba(255,255,255,0.95); text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">
+                                                                        CPK
+                                                                    </span>
+                                                                    <span class="text-h5 font-weight-bold ml-2"
+                                                                          style="color: rgba(255,255,255,0.95); text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">
+                                                                        @_cpk.ToString("F3")
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <div style="position: absolute; right: 8px; bottom: 2px; z-index: 2;">
+                                                                <span class="text-caption"
+                                                                      style="color: rgba(255,255,255,0.85); text-shadow: 1px 1px 1px rgba(0,0,0,0.2);">
+                                                                    ≥1.33
+                                                                </span>
+                                                            </div>
+                                                            <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+                          background: linear-gradient(90deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.2) 100%);
+                          z-index: 1;"></div>
+                                                        </div>
+                                                    </MProgressLinear>
+                                                </MCol>
+
+                                                @* CP Progress *@
+                                                <MCol Cols="4">
+                                                    <MProgressLinear Value="@(Math.Min(_cp / 2 * 100, 100))"
+                                                                     Color="@(_cp >= 1.33 ? "success" : _cp >= 1.0 ? "warning" : "error")"
+                                                                     Height="40"
+                                                                     Rounded
+                                                                     Striped>
+                                                        <div style="position: relative; height: 40px; width: 100%;">
+                                                            <div class="d-flex justify-space-between align-center px-3"
+                                                                 style="height: 100%; position: relative; z-index: 2;">
+                                                                <div class="d-flex align-center">
+                                                                    <span class="text-h6 font-weight-bold"
+                                                                          style="color: rgba(255,255,255,0.95); text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">
+                                                                        CP
+                                                                    </span>
+                                                                    <span class="text-h5 font-weight-bold ml-2"
+                                                                          style="color: rgba(255,255,255,0.95); text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">
+                                                                        @_cp.ToString("F3")
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <div style="position: absolute; right: 8px; bottom: 2px; z-index: 2;">
+                                                                <span class="text-caption"
+                                                                      style="color: rgba(255,255,255,0.85); text-shadow: 1px 1px 1px rgba(0,0,0,0.2);">
+                                                                    ≥1.33
+                                                                </span>
+                                                            </div>
+                                                            <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+                          background: linear-gradient(90deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.2) 100%);
+                          z-index: 1;"></div>
+                                                        </div>
+                                                    </MProgressLinear>
+                                                </MCol>
+
+                                                @* CA Progress *@
+                                                <MCol Cols="4">
+                                                    <MProgressLinear Value="@(Math.Min((1 - Math.Abs(_ca)) * 100, 100))"
+                                                                     Color="@(Math.Abs(_ca) <= 0.2 ? "success" : Math.Abs(_ca) <= 0.5 ? "warning" : "error")"
+                                                                     Height="40"
+                                                                     Rounded
+                                                                     Striped>
+                                                        <div style="position: relative; height: 40px; width: 100%;">
+                                                            <div class="d-flex justify-space-between align-center px-3"
+                                                                 style="height: 100%; position: relative; z-index: 2;">
+                                                                <div class="d-flex align-center">
+                                                                    <span class="text-h6 font-weight-bold"
+                                                                          style="color: rgba(255,255,255,0.95); text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">
+                                                                        CA
+                                                                    </span>
+                                                                    <span class="text-h5 font-weight-bold ml-2"
+                                                                          style="color: rgba(255,255,255,0.95); text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">
+                                                                        @Math.Abs(_ca).ToString("F3")
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <div style="position: absolute; right: 8px; bottom: 2px; z-index: 2;">
+                                                                <span class="text-caption"
+                                                                      style="color: rgba(255,255,255,0.85); text-shadow: 1px 1px 1px rgba(0,0,0,0.2);">
+                                                                    ≤0.2
+                                                                </span>
+                                                            </div>
+                                                            <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+                          background: linear-gradient(90deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.2) 100%);
+                          z-index: 1;"></div>
+                                                        </div>
+                                                    </MProgressLinear>
+                                                </MCol>
+                                            </MRow>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="text-center pa-4">
+                                            <span class="text-caption">No valid data for CPK analysis</span>
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="text-center pa-4">
+                                        <span class="text-caption">No CPK fields configured</span>
+                                    </div>
+                                }
+                            }
+                        </MCardText>
+                    </MCard>
+                </MCol>
+
+            </MRow>
+        </MCol>
+        <MCol Md=4 Sm=12>
+            <MCard Class="max-height" >
+                <MCardText>
+                    <MECharts Height=340 Width="@("100%")" Option="@_deviceStateChartOption"></MECharts>
+                </MCardText>
+            </MCard>
+
+            <MDialog @bind-Value="ShowDetailDialog"
+                     MaxWidth="1200"
+                     Class="battery-data-dialog">
+                <MCard>
+                    <MCardTitle Class="headline">
+                        Battery Data Details
+                        <MSpacer></MSpacer>
+                        <MButton Icon OnClick="() => ShowDetailDialog = false">
+                            <MIcon>mdi-close</MIcon>
+                        </MButton>
+                    </MCardTitle>
+                    <MCardText>
+                        <MDataTable Headers="_batteryDataHeaders"
+                                    Items="deviceStatus?.BatteryDataBuff"
+                                    ItemsPerPage="20"
+                                    Class="elevation-1">
+                            <ItemColContent>
+                                @switch (context.Header.Value)
+                                {
+                                    case "updateTime":
+                                        @context.Item.updateTime.ToString("yyyy-MM-dd HH:mm:ss")
+                                        break;
+                                    case "result":
+                                        @if (context.Item.result)
+                                        {
+                                            <MIcon Small Color="success">mdi-check-circle</MIcon>
+                                        }
+                                        else
+                                        {
+                                            <div class="d-flex align-center">
+                                                <MIcon Small Color="error">mdi-close-circle</MIcon>
+                                                @if (!string.IsNullOrEmpty(context.Item.ngReason))
+                                                {
+                                                    <span class="ml-2 error--text">@context.Item.ngReason</span>
+                                                }
+                                            </div>
+                                        }
+                                        break;
+                                    default:
+                                        var field = deviceStatus.DeviceInfo?.DeviceData?.FirstOrDefault(f => f.fieldName == context.Header.Value);
+                                        var value = GetParameterValue((FullBaseModel)context.Item, context.Header.Value);
+
+                                        @if (value != null)
+                                        {
+                                            var isInRange = true;
+                                            if (field?.isCPK == true && field.USL.HasValue && field.LSL.HasValue && value is float floatVal)
+                                            {
+                                                isInRange = floatVal >= field.LSL.Value && floatVal <= field.USL.Value;
+                                            }
+
+                                            <span class="@(isInRange ? "success--text" : "error--text")">
+                                                @(value is float floatValue ? floatValue.ToString("F2") : value.ToString())
+                                                @if (field?.isCPK == true)
+                                                {
+                                                    <span class="text-caption ml-1">
+                                                        (@field.LSL?.ToString("F1") - @field.USL?.ToString("F1"))
+                                                    </span>
+                                                }
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span>-</span>
+                                        }
+                                        break;
+                                }
+                            </ItemColContent>
+                        </MDataTable>
+                    </MCardText>
+                </MCard>
+            </MDialog>
+
+
+
+        </MCol>
+    </MRow>
+
+}
+
+
+
+
+<style>
+    ::deep .m-data-table {
+        font-size: 12px !important;
+    }
+
+        ::deep .m-data-table .m-data-table__wrapper {
+            line-height: 1 !important;
+        }
+
+            ::deep .m-data-table .m-data-table__wrapper table {
+                border-spacing: 0 !important;
+            }
+
+        ::deep .m-data-table .m-data-table-header th {
+            padding: 2px 4px !important;
+            height: auto !important;
+            min-height: 28px !important;
+            font-size: 12px !important;
+            white-space: pre-line !important;
+            line-height: 1.2 !important;
+        }
+
+        ::deep .m-data-table td {
+            padding: 1px 4px !important;
+            height: 24px !important;
+            font-size: 12px !important;
+            line-height: 1.2 !important;
+            white-space: nowrap !important;
+        }
+
+        ::deep .m-data-table .m-icon {
+            font-size: 14px !important;
+            height: 14px !important;
+            width: 14px !important;
+            margin-right: 2px !important;
+        }
+</style>
+
+
+
+

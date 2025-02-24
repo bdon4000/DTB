@@ -1,0 +1,76 @@
+﻿@page "/pages/others/500"
+@inherits ProComponentBase
+@layout MainLayout
+
+
+<MCard Class="ma-4">
+    <MCardTitle>Test Pie Chart</MCardTitle>
+    <MCardText>
+        <div style="height: 400px">
+            <MECharts Style="height: 100%; width: 100%"
+                      Option="@GetChartOption()">
+            </MECharts>
+        </div>
+    </MCardText>
+</MCard>
+
+@code {
+
+
+
+
+    private object GetChartOption()
+    {
+        var data = new[]
+        {
+            new { value = 1048, name = "Category A", itemStyle = new { color = "#FF4560" } },
+            new { value = 735, name = "Category B", itemStyle = new { color = "#FEB019" } },
+            new { value = 580, name = "Category C", itemStyle = new { color = "#775DD0" } },
+            new { value = 484, name = "Category D", itemStyle = new { color = "#00E396" } },
+            new { value = 300, name = "Category E", itemStyle = new { color = "#008FFB" } }
+        };
+
+        return new
+        {
+            tooltip = new
+            {
+                trigger = "item",
+                formatter = "{b}: {c} ({d}%)"
+            },
+            legend = new
+            {
+                type = "plain",
+                orient = "vertical",
+                right = "10%",
+                top = "middle"
+            },
+            series = new[]
+            {
+                new
+                {
+                    name = "Test Data",
+                    type = "pie",
+                    radius = "70%",
+                    center = new[] { "40%", "50%" },
+                    data = data,
+                    emphasis = new
+                    {
+                        itemStyle = new
+                        {
+                            shadowBlur = 10,
+                            shadowOffsetX = 0,
+                            shadowColor = "rgba(0, 0, 0, 0.5)"
+                        }
+                    }
+                }
+            }
+        };
+    }
+}
+
+<style>
+    /* 可选：添加一些自定义样式 */
+    ::deep .echarts {
+        border-radius: 8px;
+    }
+</style>

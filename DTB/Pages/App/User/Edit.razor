@@ -1,0 +1,201 @@
+﻿@page "/app/user/edit"
+@page "/app/user/edit/{Id}"
+@inherits ProComponentBase
+
+@using DTB.Data.App.User
+@using DTB.Components.Account
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using System.Security.Claims
+
+@inject UserManager<AppUser> UserManager
+@inject IUserStore<AppUser> UserStore
+@inject SignInManager<AppUser> SignInManager
+@inject NavigationManager NavigationManager
+@inject IPopupService PopupService
+@inject IdentityRedirectManager RedirectManager
+@inject CookieStorage CookieStorage
+
+<MCard>
+    <MCardText Class="px-6 pb-6">
+        <MTabs @bind-Value="tab" HideSlider Height=10 Color="sample-green">
+            <MTab Value="@("Account")">
+                <MIcon Size=16 Color="@(tab == "Account" ? "sample-green" : "fill")">mdi-circle</MIcon>
+                <span class="ml-2 text-btn @(tab == "Account" ? "neutral--text" : "")">Account</span>
+            </MTab>
+        </MTabs>
+        @if (UserData != null)
+        {
+            <MTabsItems @bind-Value="tab" Class="mt-4">
+                <MTabItem Value="@("Account")">
+                    <div class="d-flex block-center mt-3">
+                        @if (string.IsNullOrEmpty(UserData.Avatar))
+                        {
+                            string color = "sample-green";
+                            <MAvatar Size="120" Color="@($"{color}-lighten-5")">
+                                <span class="@($"{color}--text text-h3")">@UserData.FullName</span>
+                            </MAvatar>
+                        }
+                        else
+                        {
+                            <MAvatar Size="120">
+                                <img src="@UserData.Avatar" />
+                            </MAvatar>
+                        }
+                        <div Class="ml-6">
+                            <h5 class="mb-6">@UserData.FullName</h5>
+                            <MButton Color="primary" MinWidth=80 Height=32 Class="rounded-pill"> @T("Update") </MButton>
+                            <MButton Outlined MinWidth=80 Height=32 Class="ml-6 text-btn rounded-pill"> @T("Remove") </MButton>
+                        </div>
+                    </div>
+                    <MRow Class="my-3">
+                        <MCol Md=4 Sm=12>
+                            <MTextField @bind-Value="UserData.UserName" Color="primary" Label=@T("UserName") HideDetails="@("auto")" Outlined />
+                        </MCol>
+                        <MCol Md=4 Sm=12>
+                            <MTextField @bind-Value="UserData.FullName" Color="primary" Label=@T("FullName") HideDetails="@("auto")" Outlined />
+                        </MCol>
+                        <MCol Md=4 Sm=12>
+                            <MTextField @bind-Value="UserData.JobNumber" Color="primary" Label=@T("JobNumber") HideDetails="@("auto")" Outlined />
+                        </MCol>
+                    </MRow>
+                    <MRow>
+                        <MCol Md=4 Sm=12>
+                            <MSelect @bind-Value="UserData.Status"
+                                     Color="primary"
+                                     HideDetails="@("auto")"
+                                     Outlined
+                                     Items="@UserService.GetStatusList()"
+                                     ItemText="u => u"
+                                     ItemValue="u => u"
+                                     Label=@T("Status")>
+                            </MSelect>
+                        </MCol>
+                        <MCol Md=4 Sm=12>
+                            <MSelect @bind-Value="UserData.Role"
+                                     Color="primary"
+                                     HideDetails="@("auto")"
+                                     Outlined
+                                     Items="@UserService.GetRoleList()"
+                                     ItemText="u => u"
+                                     ItemValue="u => u"
+                                     Label=@T("Role")>
+                            </MSelect>
+                        </MCol>
+                        <MCol Md=4 Sm=12>
+                            <MTextField @bind-Value="UserData.PhoneNumber" Color="primary" Label=@T("Phone") HideDetails="@("auto")" Outlined />
+                        </MCol>
+                    </MRow>
+                </MTabItem>
+            </MTabsItems>
+        }
+
+        <div class="mt-10 d-flex">
+            <MSpacer></MSpacer>
+            <MButton MinWidth=80 Height=40 Outlined Class="text-btn rounded-pill" OnClick="ResetForm"> @T("Reset") </MButton>
+            <MButton MinWidth=80 Height=40 Color="primary" Class="ml-6 rounded-pill" OnClick="SaveChangesAsync"> @T("SaveChanges") </MButton>
+        </div>
+    </MCardText>
+</MCard>
+
+@code {
+    private AppUser? _userData;
+    private AppUser? _originalUserData;
+    private StringNumber? tab;
+    private bool _isUserDataLoaded = false;
+
+    [CascadingParameter]
+    private IPageTabsProvider? PageTabsProvider { get; set; }
+
+    [Parameter]
+    public string? Id { get; set; }
+
+    public AppUser UserData
+    {
+        get { return _userData; }
+        set { _userData = value; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadUserData();
+    }
+
+    private async Task LoadUserData()
+    {
+        if (!string.IsNullOrEmpty(Id))
+        {
+            _userData = await UserManager.FindByIdAsync(Id);
+            if (_userData == null)
+            {
+                NavigationManager.NavigateTo("/app/user/list");
+                return;
+            }
+            // 保存原始数据用于重置
+            _originalUserData = new AppUser
+                {
+                    UserName = _userData.UserName,
+                    FullName = _userData.FullName,
+                    JobNumber = _userData.JobNumber,
+                    Status = _userData.Status,
+                    Role = _userData.Role,
+                    PhoneNumber = _userData.PhoneNumber,
+                    Avatar = _userData.Avatar
+                };
+
+            _isUserDataLoaded = true;
+            UpdateTabTitle();
+            StateHasChanged();
+        }
+    }
+
+    private void UpdateTabTitle()
+    {
+        PageTabsProvider?.UpdateTabTitle(NavigationManager.GetAbsolutePath(), () => T("Edit of {0}", UserData.FullName));
+    }
+
+    private async Task SaveChangesAsync()
+    {
+        try
+        {
+            if (UserData != null)
+            {
+                var result = await UserManager.UpdateAsync(UserData);
+                if (result.Succeeded)
+                {
+                    await PopupService.EnqueueSnackbarAsync("保存成功", AlertTypes.Success);
+                    NavigationManager.NavigateTo("/app/user/list");
+                }
+                else
+                {
+                    var errors = string.Join("\n", result.Errors.Select(e => e.Description));
+                    await PopupService.EnqueueSnackbarAsync($"保存失败: {errors}", AlertTypes.Error);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await PopupService.EnqueueSnackbarAsync($"发生错误: {ex.Message}", AlertTypes.Error);
+        }
+    }
+
+    private void ResetForm()
+    {
+        if (_originalUserData != null && UserData != null)
+        {
+            UserData.UserName = _originalUserData.UserName;
+            UserData.FullName = _originalUserData.FullName;
+            UserData.JobNumber = _originalUserData.JobNumber;
+            UserData.Status = _originalUserData.Status;
+            UserData.Role = _originalUserData.Role;
+            UserData.PhoneNumber = _originalUserData.PhoneNumber;
+            UserData.Avatar = _originalUserData.Avatar;
+
+            StateHasChanged();
+        }
+    }
+}

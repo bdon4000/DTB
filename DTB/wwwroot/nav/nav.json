@@ -1,0 +1,17 @@
+[
+  
+  {
+    "Id": 14,
+    "Title": "User",
+    "Icon": "mdi-account-outline",
+    "Children": [
+      {
+        "Id": 15,
+        "Title": "List",
+        "Icon": "mdi-circle",
+        "Href": "app/user/list"
+      }
+    ]
+  }
+
+]

@@ -1,0 +1,304 @@
+﻿@page "/Account/Register"
+@layout EmptyLayout
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using DTB.Data.App.User
+@using DTB.Components.Account
+@using System.Security.Claims
+@using System.Linq
+@using System.Text.RegularExpressions;
+@inject UserManager<AppUser> UserManager
+@inject IUserStore<AppUser> UserStore
+@inject SignInManager<AppUser> SignInManager
+
+@inject NavigationManager NavigationManager
+@inject IPopupService PopupService
+@inject IdentityRedirectManager RedirectManager
+@inject CookieStorage CookieStorage
+
+
+
+<div class="d-flex align-center" style="height:calc(100% - 96px)">
+
+   <div style="height:60px;"></div>
+     <div class="mt-2 mx-auto text-center" style="width:420px;">
+        <MDialog @bind-Value="IsModalOpen" Width=400 Height=1000>
+            <ActivatorContent>
+                <MAvatar Size=80 @onclick="ToggleModal">
+                    <MImage Src="@Input.Avatar"></MImage>
+                </MAvatar>
+                <MIcon Small Style="position: absolute; bottom: 0; right: 0; width: 24px; height: 24px;">fa:far fa-edit</MIcon>
+                
+            </ActivatorContent>
+            <ChildContent>
+                <MCard  Class="mx-auto my-auto d-flex flex-column align-items-center" Style="margin-top: auto; margin-bottom: auto;">
+                    <div class="d-flex flex-wrap justify-content-center">
+                        @foreach (var i in Enumerable.Range(1, 16))
+                        {
+                            var avatarPath = $"/img/avatar/{i}.svg";
+                            <MAvatar Size=70 Class="custom-avatar" @onclick="() => SelectAvatar(avatarPath)">
+                                <MImage Src="@($"/img/avatar/{i}.svg")"></MImage>
+                            </MAvatar>
+                        }
+                    </div>
+                    <MButton Class="mt-4 mb-3" Color="primary" Style="width: 150px;" @onclick="CloseModal">Close</MButton>
+                </MCard>
+            </ChildContent>
+        </MDialog>
+
+        <style>
+            .custom-avatar {
+                margin: 8px; /* Adjust this value for more or less space */
+            }
+
+            .d-flex {
+                height: 100%; /* Ensure the dialog takes full height */
+                align-items: center; /* Center content vertically */
+            }
+        </style>
+
+        <style>
+            .custom-avatar {
+                margin: 8px; /* Adjust this value for more or less space */
+            }
+        </style>
+         
+        <h5 class="mt-2 mb-12">Register an new account.😉 </h5>
+        <StatusMessage Message="@Message" />
+        <EditForm Model="Input" asp-route-returnUrl="@ReturnUrl" method="post" OnValidSubmit="RegisterUser" FormName="register">
+            <DataAnnotationsValidator />
+                <MTextField TValue="string"
+                            Label="UserName"
+                            Placeholder=""
+                            Outlined
+                            HideDetails="@("auto")"
+                            class="mt-10"
+                            aria-required="true"
+                            @bind-Value="Input.UserName">
+                </MTextField>
+            <MTextField TValue="string"
+                        Label="JobNumber"
+                        Placeholder=""
+                        Outlined
+                        HideDetails="@("auto")"
+                        class="mt-10"
+                        aria-required="true"
+                        @bind-Value="Input.JobNumber">
+            </MTextField>
+            <MTextField TValue="string"
+                        Label="FullName"
+                        Placeholder=""
+                        Outlined
+                        HideDetails="@("auto")"
+                        class="mt-10"
+                        aria-required="true"
+                        @bind-Value="Input.FullName">
+            </MTextField>
+            <MTextField TValue="string"
+                        Label="Password"
+                        Type="@(_show ? "text" : "password")"
+                        AppendIcon="@(_show ? "mdi-eye" : "mdi-eye-off")"
+                        OnAppendClick="() => _show = !_show"
+                        Placeholder=""
+                        Outlined
+                        HideDetails="@("auto")"
+                        class="mt-10"
+                        aria-required="true"
+                        @bind-Value="Input.Password">
+            </MTextField>
+            <MTextField TValue="string"
+                        Label="Confirm Password"
+                        Type="@(_show ? "text" : "password")"
+                        AppendIcon="@(_show ? "mdi-eye" : "mdi-eye-off")"
+                        OnAppendClick="() => _show = !_show"
+                        Placeholder=""
+                        Outlined
+                        HideDetails="@("auto")"
+                        class="mt-10"
+                        aria-required="true"
+                        @bind-Value="Input.ConfirmPassword">
+            </MTextField>
+            <InputText Label="Avatar" type="hidden" @bind-Value="@Input.Avatar" />
+
+
+            <MButton Class="mt-11 rounded-4 text-btn white--text" type="submit" Height=46 Width=340 Color="primary">Register</MButton>
+        </EditForm>
+    </div>
+
+</div>
+
+<MFooter Padless Height=96 Style="background:transparent;">
+    <MRow Justify="JustifyTypes.Center">
+        <a href="http://www.sz-zhongji.com.cn/" target="_blank" class="neutral-lighten-3--text" style="text-decoration:none;font-size:14px;">深圳市中基自动化股份有限公司</a>
+    </MRow>
+</MFooter>
+
+@code {
+    [Inject]
+    public NavigationManager Navigation { get; set; } = default!;
+    private IEnumerable<IdentityError>? identityErrors;
+    private bool _show;
+
+    private bool IsModalOpen { get; set; } = false;
+
+    private async Task ToggleModal()
+    {
+        IsModalOpen = !IsModalOpen;
+    }
+
+    private async Task CloseModal()
+    {
+        IsModalOpen = false;
+    }
+
+    private void SelectAvatar(string avatarPath)
+    {
+        Input.Avatar = avatarPath; // Update the Input.Avatar property
+    }
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new() { Avatar = "/img/avatar/1.svg" };
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private string? Message => identityErrors is null ? null : $"Error: {string.Join(", ", identityErrors.Select(error => error.Description))}";
+
+    public async Task RegisterUser(EditContext editContext)
+    {
+        var usercheck=await UserManager.FindByNameAsync(Input.UserName);
+        if (usercheck != null)
+        {
+            await PopupService.EnqueueSnackbarAsync("用户已存在",AlertTypes.Warning);
+        }
+        else
+        {
+            var user = CreateUser();
+            user.JobNumber = Input.JobNumber;
+            user.Avatar = Input.Avatar;
+            user.Role = "Operator";
+            user.Status = "Active";
+            user.FullName = Input.FullName;
+            await UserStore.SetUserNameAsync(user, Input.UserName, CancellationToken.None);
+            var result = await UserManager.CreateAsync(user, Input.Password);
+            if (!result.Succeeded)
+            {
+                identityErrors = result.Errors;
+                return;
+            }
+            // Logger.LogInformation("User created a new account with password.");
+            Guid key = Guid.NewGuid();
+            // 获取用户的所有声明
+            var claims = await UserManager.GetClaimsAsync(user);
+            Claim jobNumberClaim = claims.FirstOrDefault(c => c.Type == "JobNumber");
+            if (jobNumberClaim == null || jobNumberClaim.Value != user.JobNumber)
+            {
+                if (jobNumberClaim != null)
+                {
+                    await UserManager.RemoveClaimAsync(user, jobNumberClaim);
+                }
+                await UserManager.AddClaimAsync(user, new Claim("JobNumber", user.JobNumber));
+            }
+            Claim avatarClaim = claims.FirstOrDefault(c => c.Type == "Avatar");
+            if (avatarClaim == null || avatarClaim.Value != user.Avatar)
+            {
+                if (avatarClaim != null)
+                {
+                    await UserManager.RemoveClaimAsync(user, avatarClaim);
+                }
+                await UserManager.AddClaimAsync(user, new Claim("Avatar", user.Avatar));
+            }
+            Claim roleClaim = claims.FirstOrDefault(c => c.Type == "role");
+            if (roleClaim == null || roleClaim.Value != user.Avatar)
+            {
+                // 如果没有Avatar的声明，或者声明的值与usr.Avatar不同，则添加或更新声明
+                if (roleClaim != null)
+                {
+                    // 如果声明存在，则先移除旧的声明
+                    await UserManager.RemoveClaimAsync(user, roleClaim);
+                }
+                // 添加新的声明
+                await UserManager.AddClaimAsync(user, new Claim("role", user.Role));
+            }
+            BlazorCookieLoginMiddleware.Logins[key] = new LoginInfo { UserName = user.UserName, Password = Input.Password };
+            await PopupService.EnqueueSnackbarAsync("注册成功", AlertTypes.Success);
+            await Task.Delay(TimeSpan.FromSeconds(1));
+            NavigationManager.NavigateTo($"/login?key={key}", true);
+
+        }
+        
+
+    }
+
+    private AppUser CreateUser()
+    {
+        try
+        {
+
+            var x = Activator.CreateInstance<AppUser>();
+            return x;
+        }
+        catch
+        {
+            throw new InvalidOperationException($"Can't create an instance of '{nameof(AppUser)}'. " +
+                $"Ensure that '{nameof(AppUser)}' is not an abstract class and has a parameterless constructor.");
+        }
+    }
+
+    // Password Attribute
+    public class PasswordAttribute : RegularExpressionAttribute
+    {
+        public PasswordAttribute()
+            : base(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$")
+        {
+        }
+    }
+
+    //UserName Attribute
+    public class ValidCharacterAttribute : RegularExpressionAttribute
+    {
+        public ValidCharacterAttribute()
+            : base(@"^[a-zA-Z0-9]{6,12}$")
+        {
+        }
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [StringLength(50, MinimumLength = 1)]
+        [Display(Name = "Avatar")]
+        public string? Avatar { get; set; }
+
+        [Required(ErrorMessage = "{0}不可为空。")]
+        [ValidCharacter(ErrorMessage = "用户名只能包含字母、数字或特殊字符,长度6-12")]
+        [StringLength(20, MinimumLength = 6)]
+        [Display(Name = "UserName")]
+        public string? UserName { get; set; }
+
+        [Required(ErrorMessage = "{0}不可为空。")]
+        [StringLength(20, MinimumLength = 1)]
+        [Display(Name = "JobNumber")]
+        public string? JobNumber { get; set; }
+
+        [Required(ErrorMessage = "{0}不可为空。")]
+        [StringLength(20, MinimumLength = 1)]
+        [Display(Name = "FullName")]
+        public string? FullName { get; set; }
+
+        [Required]
+        [Password(ErrorMessage ="密码必须包含大写小写字母，数字和特殊字符，且最小长度8")]
+        [StringLength(100, ErrorMessage = "The {0} must be at least {2} and at max {1} characters long.", MinimumLength = 8)]
+        [DataType(DataType.Password)]
+        [Display(Name = "Password")]
+        public string Password { get; set; } = "";
+
+        [DataType(DataType.Password)]
+        [Display(Name = "Confirm password")]
+        [Compare("Password", ErrorMessage = "密码不一致.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

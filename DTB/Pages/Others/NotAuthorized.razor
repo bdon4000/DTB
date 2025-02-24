@@ -1,0 +1,37 @@
+﻿@page "/pages/others/401"
+@layout MainLayout
+@using System.Security.Claims
+@using DTB.Data.App.User
+@using Microsoft.AspNetCore.Identity
+@inject UserManager<AppUser> UserManager
+<MRow Class="d-flex flex-column justify-center" Style="height:calc(100vh - 132px);">
+    <MContainer Class="d-flex flex-column justify-space-between align-center">
+        <MImage Src="/img/status/401.png" Width="350" Height="200">
+        </MImage>
+        <MRow NoGutters Class="mt-12 text-btn neutral-lighten-2--text">You are not authorized! 🔐</MRow>
+        <MButton Class="rounded-pill mt-6"
+                 Dark    
+                 Tile
+                 Color="primary"
+                 OnClick="()=>Navigation.NavigateTo(GlobalVariables.DefaultRoute)">
+            Back to home
+        </MButton>
+    </MContainer>
+</MRow>
+
+<AuthorizeView>
+    <Authorized>
+        <h2> @context.User.Identity.Name</h2>
+        <h2> @context.User.Claims.FirstOrDefault(c => c.Type == "Avatar")?.Value</h2>
+    </Authorized>
+    <NotAuthorized>
+        <h2>fcu</h2>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+
+    [Inject]
+    public NavigationManager Navigation { get; set; } = default!;
+
+}

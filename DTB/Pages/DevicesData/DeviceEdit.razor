@@ -1,0 +1,394 @@
+﻿@page "/Device/Edit/{DeviceCode}"
+@inherits ProComponentBase
+@using DTB.Data.Devices
+@using DTB.Data.DataBase
+@using DTB.Data
+@using Microsoft.EntityFrameworkCore
+
+@inject IDbContextFactory<BatteryDbContext> DbContextFactory
+@inject MasaBlazor MasaBlazor
+@inject NavHelper NavHelper
+@inject NavigationManager NavigationManager
+@inject IPopupService PopupService
+@inject DeviceStatusCacheFactory CacheFactory
+
+
+@if (!Device.DeviceData.Any()) // 作为初始加载的判断条件
+{
+    <MProgressCircular Indeterminate="true" />
+}
+else{
+    <MCard Class="pa-6 full-height-card">
+        <div class="content-wrapper">
+            <MTabsItems @bind-Value="tab">
+                <MTabItem Value="@("Device")">
+                    <MRow>
+                        <!-- 左侧信息列 -->
+                        <MCol Cols="12" Md="5" Class="pr-6 mt-2">
+                            <h3 class="text-h6 mb-0">@T("DeviceInfo")</h3>
+                            <MRow Class="mt-2">
+                                <MCol Cols="12">
+                                    <div class="d-flex flex-column">
+                                        <MTextField @bind-Value="Device.DeviceName"
+                                        Color="primary"
+                                        Label=@T("DeviceName")
+                                        HideDetails="true"
+                                        Outlined
+                                        Class="mb-4" />
+                                        <MTextField @bind-Value="Device.DeviceCode"
+                                        Color="primary"
+                                        Label=@T("DeviceCode")
+                                        HideDetails="true"
+                                        Outlined
+                                        Class="mb-6" />
+                                        <MTextField @bind-Value="Device.StandardPPM"
+                                        Color="primary"
+                                        Label=@T("StandardPPM")
+                                        Type="number"
+                                        Step="0.1"
+                                        HideDetails="true"
+                                        Outlined
+                                        Class="mb-6" />
+                                    </div>
+                                </MCol>
+                            </MRow>
+
+                            <!-- 设备图片 -->
+                            <MRow>
+                                <MCol Cols="4">
+                                    <h3 class="text-h6 mb-0">@T("DeviceAvatar")</h3>
+                                </MCol>
+                                <MCol Cols="4" Class="d-flex justify-start">
+                                    <div class="device-image-container">
+                                        <MImage Src="@Device.DeviceAvatar" Class="device-image"></MImage>
+                                        <MButton Icon
+                                        Color="primary"
+                                        Class="change-image-btn"
+                                        OnClick="@(() => OpenImageSelector())">
+                                            <MIcon>fa:fas fa-camera</MIcon>
+                                        </MButton>
+                                    </div>
+                                </MCol>
+                            </MRow>
+                        </MCol>
+
+                        <!-- 右侧数据表格 -->
+                        <MCol Cols="12" Md="7" Class="pr-6 mt-2">
+                            <div class="d-flex align-center mb-4">
+                                <h3 class="text-h6 mb-0">@T("DataField")</h3>
+                                <MSpacer></MSpacer>
+                                <MButton Color="primary"
+                                Small
+                                Class="rounded-lg"
+                                OnClick="@(() => AddNewField())">
+                                    <MIcon Left>fa:fas fa-plus</MIcon>
+                                    @("AddField")
+                                </MButton>
+                            </div>
+
+                            <MList Dense Class="elevation-1 mt-5" Style="overflow-y:auto;">
+                                @foreach (var item in Device.DeviceData)
+                                {
+                                    <MListItem Dense>
+                                        <MListItemContent>
+                                            <div class="d-flex align-center">
+                                                <!-- Name Field -->
+                                                <div class="mr-4" style="min-width: 200px;">
+                                                    <MTextField @bind-Value="item.name"
+                                                    Dense
+                                                    HideDetails="true"
+                                                    Class="mt-1"
+                                                   Placeholder=@T("InputDataName") />
+                                                </div>
+                                                <!-- Field Name -->
+                                                <div class="mr-4" style="min-width: 200px;">
+                                                    <MTextField @bind-Value="item.fieldName"
+                                                    Dense
+                                                    HideDetails="true"
+                                                    Class="mt-1"
+                                                        Placeholder=@T("InputDataField") />
+                                                </div>
+                                                <!-- CPK Checkbox -->
+                                                <div class="mr-4" style="min-width: 100px;">
+                                                    <MCheckbox @bind-Value="item.isCPK"
+                                                    Dense
+                                                    OnChange="EventCallback.Factory.Create<bool>(this,
+               value => OnCPKChanged(item, value))"
+                                                    Label="CPK"
+                                                    HideDetails="true"
+                                                    Class="mt-1"/>
+                                                </div>
+                                                <!-- USL Field - 仅在 isCPK 为 true 时显示 -->
+                                                @if( item.isCPK==true)
+                                                {
+                                                    <!-- USL Field - 仅在 isCPK 为 true 时显示 -->
+                                                    <div class="mr-4" style="min-width: 120px;">
+                                                        <MTextField @bind-Value="item.USL"
+                                                        Dense
+                                                        Type="number"
+                                                        Step="0.1"
+                                                        HideDetails="true"
+                                                        Class="mt-1"
+                                                        Placeholder="USL" />
+                                                    </div>
+
+                                                    <!-- LSL Field - 仅在 isCPK 为 true 时显示 -->
+                                                    <div style="min-width: 120px;">
+                                                        <MTextField @bind-Value="item.LSL"
+                                                        Dense
+                                                        Type="number"
+                                                        Step="0.1"
+                                                        HideDetails="true"
+                                                        Class="mt-1"
+                                                        Placeholder="LSL" />
+                                                    </div>
+                                                }
+
+                                            </div>
+                                        </MListItemContent>
+                                        <MListItemAction>
+                                            <div class="d-flex">
+                                                @* <MButton Icon *@
+                                                @* XSmall *@
+                                                @* Class="mr-2" *@
+                                                @* Color="primary" *@
+                                                @* OnClick="@(() => EditField(item))"> *@
+                                                @*     <MIcon Small>fa:far fa-edit</MIcon> *@
+                                                @* </MButton> *@
+                                                <MButton Icon
+                                                XSmall
+                                                Color="error"
+                                                OnClick="@(() => DeleteField(item))">
+                                                    <MIcon Small>fa:far fa-trash-alt</MIcon>
+                                                </MButton>
+                                            </div>
+                                        </MListItemAction>
+                                    </MListItem>
+                                    <MDivider></MDivider>
+                                }
+                            </MList>
+                        </MCol>
+                    </MRow>
+                </MTabItem>
+            </MTabsItems>
+
+            <!-- 底部按钮 -->
+            <div class="bottom-buttons">
+                <MButton Text
+                Class="mr-4"
+                OnClick="@(() => CancelEdit())">
+                    @T("Cancel")
+                </MButton>
+                <MButton Color="primary"
+                Class="px-6 rounded-lg"
+                OnClick="SaveChanges">
+                   @("SaveChanges")
+                </MButton>
+            </div>
+        </div>
+    </MCard>
+}
+<style>
+
+    .full-height-card {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 24px;
+    }
+
+    .content-wrapper {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    position: relative;
+    min-height: 100%;
+    }
+
+    .bottom-buttons {
+    position: sticky;
+    bottom: 0;
+    right: 0;
+    display: flex;
+    justify-content: flex-end;
+    padding: 16px 0;
+    background-color: white;
+    margin-top: auto;
+    }
+
+    /* 可选：添加渐变效果，使底部按钮与内容过渡更自然 */
+    .bottom-buttons::before {
+    content: '';
+    position: absolute;
+    top: -20px;
+    left: 0;
+    right: 0;
+    height: 20px;
+    background: linear-gradient(to top, rgba(255,255,255,1), rgba(255,255,255,0));
+    pointer-events: none;
+    }
+    .device-image-container {
+    position: relative;
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    overflow: hidden;
+    width: 100%; /* 控制容器宽度为父元素的50% */
+    height: auto;
+    aspect-ratio: 16/16; /* 更改比例为16:9 */
+    }
+
+    .device-image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* 改为contain确保图片完整显示 */
+    }
+
+    .change-image-btn {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    opacity: 0.8;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public string DeviceCode { get; set; }
+    private StringNumber? tab;
+    public DeviceModel Device { get; set; }
+
+    // 
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await base.OnInitializedAsync();
+
+            // 1. 先初始化一个空的 Device 对象，防止渲染时出现空引用
+            Device = new DeviceModel
+                {
+                    DeviceCode = DeviceCode,
+                    DeviceData = Array.Empty<dataField>()
+                };
+
+            // 2. 使用 await 等待数据库操作完成
+            await using var context = await DbContextFactory.CreateDbContextAsync();
+            var deviceFromDb = await context.Devices
+                .FirstOrDefaultAsync(d => d.DeviceCode == DeviceCode);
+
+            // 3. 只有在成功获取数据后才更新 Device
+            if (deviceFromDb != null)
+            {
+                Device = deviceFromDb;
+                StateHasChanged(); // 通知 Blazor 更新 UI
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading device: {ex}");
+            await PopupService.EnqueueSnackbarAsync("加载设备信息失败", AlertTypes.Error);
+        }
+    }
+
+    // AddNewField, EditField, DeleteField 方法保持不变，因为它们不涉及数据库操作
+    private void AddNewField()
+    {
+        var newField = new dataField { name = "", fieldName = "" };
+        var newList = Device.DeviceData.ToList();
+        newList.Add(newField);
+        Device.DeviceData = newList.ToArray();
+        StateHasChanged();
+    }
+
+    private void EditField(dataField field)
+    {
+        // 字段已经是可编辑的，无需额外处理
+    }
+
+    private async Task DeleteField(dataField field)
+    {
+        var newList = Device.DeviceData.ToList();
+        newList.Remove(field);
+        Device.DeviceData = newList.ToArray();
+        StateHasChanged();
+    }
+
+    private void OpenImageSelector()
+    {
+        // 实现图片选择逻辑
+    }
+
+    private async Task SaveChanges()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(Device.DeviceName))
+            {
+                await PopupService.EnqueueSnackbarAsync("设备名称不能为空", AlertTypes.Error);
+                return;
+            }
+
+            await using var context = await DbContextFactory.CreateDbContextAsync();
+
+            var existingDevice = await context.Devices
+                .FirstOrDefaultAsync(d => d.DeviceCode == DeviceCode);
+
+            if (existingDevice == null)
+            {
+                // 新增设备
+                await context.Devices.AddAsync(Device);
+            }
+            else
+            {
+                // 更新所有属性
+                existingDevice.DeviceName = Device.DeviceName;
+                existingDevice.DeviceAvatar = Device.DeviceAvatar;
+                existingDevice.DeviceData = Device.DeviceData;
+                existingDevice.StandardPPM = Device.StandardPPM;
+                // 标记实体为已修改
+                context.Devices.Update(existingDevice);
+            }
+
+            // 添加日志以确认是否执行到这里
+            Console.WriteLine("Attempting to save changes to database");
+
+            var changes = await context.SaveChangesAsync();
+            // 更新 DeviceStatus 中的 DeviceModel
+            var deviceCache = CacheFactory.GetCache(Device.Id);
+            var currentStatus = deviceCache.GetStatus();
+            currentStatus.DeviceInfo = Device;
+            deviceCache.UpdateStatus(currentStatus);
+
+            // 添加日志以显示受影响的行数
+            Console.WriteLine($"Changes saved. Rows affected: {changes}");
+
+            await PopupService.EnqueueSnackbarAsync("保存成功", AlertTypes.Success);
+        }
+        catch (Exception ex)
+        {
+            // 修改异常处理以显示具体错误
+            Console.WriteLine($"Error saving changes: {ex}");
+            await PopupService.EnqueueSnackbarAsync($"保存失败: {ex.Message}", AlertTypes.Error);
+        }
+    }
+
+    private void CancelEdit()
+    {
+        NavigationManager.NavigateTo("/Device/List");
+    }
+
+    private void OnCPKChanged(dataField field, bool value)
+    {
+        Console.WriteLine($"OnCPKChanged triggered - Old value: {field.isCPK}, New value: {value}");
+        field.isCPK = value;
+
+        if (field.isCPK != true)
+        {
+            field.USL = null;
+            field.LSL = null;
+        }
+
+        StateHasChanged();
+    }
+}

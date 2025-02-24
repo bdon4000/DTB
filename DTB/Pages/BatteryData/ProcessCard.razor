@@ -1,0 +1,254 @@
+﻿@using Microsoft.EntityFrameworkCore
+@using DTB.Data.BatteryData.BaseModel
+@using DTB.Data.Devices
+@typeparam TData where TData : BaseModel
+@inject IDbContextFactory<BatteryDbContext> DbContextFactory
+
+@if (isLoading)
+{
+    <MCard Class="mx-2 my-2 border border-2 border-medium-emphasis rounded-lg" Elevation="2">
+        <MCardText>
+            <div class="d-flex justify-center align-center pa-4">
+                <MProgressCircular Indeterminate Color="primary" Size="24"></MProgressCircular>
+            </div>
+        </MCardText>
+    </MCard>
+}
+else
+{
+    <MCard Style="@(processData == null ? "filter: grayscale(100%); opacity: 0.7;" : "")"
+           Class="@($"{CardClasses} rounded-lg position-relative")"
+           Elevation="2">
+        <MCardText>
+            <!-- Header Section with Improved Layout -->
+            <div class="d-flex align-center justify-space-between mb-3">
+                <div class="d-flex align-center">
+                    <img src="@DeviceAvatar"
+                         alt="@deviceName"
+                         height="32"
+                         width="32"
+                         class="rounded-circle mr-2 border border-1 border-medium-emphasis" />
+                    <span class="text-h6 mr-2">@deviceName</span>
+                    <span class="text-subtitle-2 text-medium-emphasis">@Title</span>
+                </div>
+                @if (processData != null)
+                {
+                    @if (processData.result)
+                    {
+                        <MChip Color="success"
+                               TextColor="white"
+                               Class="px-4"
+                               Small>
+                            Pass
+                        </MChip>
+                    }
+                    else
+                    {
+                        <MChip Color="error"
+                               TextColor="white"
+                               Class="px-4"
+                               Small>
+                            <span class="d-flex align-center">
+                                Fail @(!string.IsNullOrEmpty(processData.ngReason) ? $": {processData.ngReason}" : "")
+                            </span>
+                        </MChip>
+                    }
+                }
+            </div>
+
+            @if (processData != null)
+            {
+                <div class="process-data-container">
+                    @if (deviceFieldMappings != null)
+                    {
+                        <div class="d-flex flex-wrap gap-1 mb-2">
+                            @foreach (var field in deviceFieldMappings)
+                            {
+                                var value = GetFieldValue(processData, field.FieldName);
+                                if (value != null)
+                                {
+                                    <div class="field-item" style="width: calc(30% - 4px); min-width: 150px;">
+                                        <div class="d-flex align-center py-1">
+                                            <div class="text-caption text-medium-emphasis" style="width: 90px;">@field.Name</div>
+                                            <div class="text-subtitle-1 font-weight-medium">
+                                                @if (field.IsCPK && value is float floatValue && field.USL.HasValue && field.LSL.HasValue)
+                                                {
+                                                    var inRange = floatValue >= field.LSL.Value && floatValue <= field.USL.Value;
+                                                    <span class="@(inRange ? "text-success" : "text-error")">
+                                                        @floatValue.ToString("F2")
+                                                    </span>
+                                                    <span class="text-caption text-medium-emphasis ml-2">
+                                                        (@field.LSL.Value.ToString("F2") - @field.USL.Value.ToString("F2"))
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    @value
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+
+                    <div class="d-flex justify-space-between align-center text-caption text-medium-emphasis pt-2 border-top">
+                        <span>Process Time: @processData.uploadTime.ToString("yyyy-MM-dd HH:mm:ss")</span>
+                        <span>Code: @Code</span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="pa-2"></div>
+            }
+        </MCardText>
+    </MCard>
+}
+
+@code {
+    [Parameter] public string Code { get; set; } = "";
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string DeviceCode { get; set; } = "";
+
+    private TData? processData;
+    private string DeviceAvatar { get; set; } = "/images/default.png";
+    private string deviceName { get; set; } = "";
+    private bool isLoading = true;
+    private List<DeviceFieldInfo>? deviceFieldMappings;
+
+    private string CardClasses => $"mx-2 my-2 {GetCardClass()}".Trim();
+
+    private class DeviceFieldInfo
+    {
+        public string Name { get; set; } = "";
+        public string FieldName { get; set; } = "";
+        public bool IsCPK { get; set; }
+        public float? USL { get; set; }
+        public float? LSL { get; set; }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrEmpty(Code))
+        {
+            isLoading = false;
+            return;
+        }
+
+        isLoading = true;
+        await LoadAllDataAsync();
+        isLoading = false;
+    }
+
+    private async Task LoadAllDataAsync()
+    {
+        try
+        {
+            await using var context = await DbContextFactory.CreateDbContextAsync();
+
+            // 加载设备信息和字段映射
+            if (!string.IsNullOrEmpty(DeviceCode))
+            {
+                var device = await context.Devices
+                    .FirstOrDefaultAsync(d => d.DeviceCode == DeviceCode);
+
+                if (device != null)
+                {
+                    deviceName = device.DeviceName ?? "Unknown Device";
+                    DeviceAvatar = !string.IsNullOrEmpty(device.DeviceAvatar)
+                        ? device.DeviceAvatar
+                        : "/images/default.png";
+
+                    if (device.DeviceData != null)
+                    {
+                        deviceFieldMappings = device.DeviceData
+                            .Where(d => !string.IsNullOrEmpty(d.name) && !string.IsNullOrEmpty(d.fieldName))
+                            .Select(d => new DeviceFieldInfo
+                                {
+                                    Name = d.name!,
+                                    FieldName = d.fieldName!,
+                                    IsCPK = d.isCPK,
+                                    USL = d.USL,
+                                    LSL = d.LSL
+                                })
+                            .ToList();
+                    }
+                }
+            }
+
+            // 加载工艺数据
+            var dbSet = context.Set<TData>();
+            if (typeof(TData).IsAssignableTo(typeof(FilmBaseModel)))
+            {
+                processData = await dbSet
+                    .Where(x => ((FilmBaseModel)(object)x).FilmCode == Code)
+                    .FirstOrDefaultAsync();
+            }
+            else if (typeof(TData).IsAssignableTo(typeof(ShellBaseModel)))
+            {
+                processData = await dbSet
+                    .Where(x => ((ShellBaseModel)(object)x).ShellCode == Code)
+                    .FirstOrDefaultAsync();
+            }
+            else if (typeof(TData).IsAssignableTo(typeof(JellyBaseModel)))
+            {
+                processData = await dbSet
+                    .Where(x => ((JellyBaseModel)(object)x).JellyCode == Code)
+                    .FirstOrDefaultAsync();
+            }
+            else if (typeof(TData).IsAssignableTo(typeof(JellyShellBaseModel)))
+            {
+                processData = await dbSet
+                    .Where(x => ((JellyShellBaseModel)(object)x).ShellCode == Code)
+                    .FirstOrDefaultAsync();
+
+                    Console.WriteLine($"---------------------WowJellyShell{Code}");
+            }
+            else if (typeof(TData).IsAssignableTo(typeof(ShellFilmBaseModel)))
+            {
+                processData = await dbSet
+                    .Where(x => ((ShellFilmBaseModel)(object)x).FilmCode == Code)
+                    .FirstOrDefaultAsync();
+                Console.WriteLine($"---------------------WowShellFilm{Code}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading data: {ex.Message}");
+        }
+    }
+
+    private object? GetFieldValue(TData data, string fieldName)
+    {
+        var property = typeof(TData).GetProperty(fieldName);
+        if (property != null)
+        {
+            var value = property.GetValue(data);
+            if (value is float floatValue)
+            {
+                return floatValue;
+            }
+            if (value != null && value.GetType() == typeof(float?))
+            {
+                return (float?)value;
+            }
+            if (value is string str)
+            {
+                return str;
+            }
+        }
+        return null;
+    }
+
+    private string GetCardClass()
+    {
+        if (processData == null)
+            return "border border-2 border-medium-emphasis";
+
+        return processData.result
+            ? "border border-2 border-success"
+            : "border border-2 border-error";
+    }
+}

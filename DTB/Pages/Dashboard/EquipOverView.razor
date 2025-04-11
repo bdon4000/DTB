@@ -1,0 +1,127 @@
+@page "/dashboard/equipoverview"
+
+@using DTB.Data.BatteryData.BaseModel
+@using DTB.Data.Devices
+@using DTB.Data.DataBase
+@using DTB.Data
+@using DTB.Data.App.Status
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Identity
+@using DTB.Service
+@using Microsoft.AspNetCore.SignalR.Client
+@inject UserManager<AppUser> UserManager
+@inherits ProComponentBase
+@inject MasaBlazor MasaBlazor
+@inject NavHelper NavHelper
+@inject IDbContextFactory<BatteryDbContext> DbContextFactory
+@implements IDisposable
+@inject DeviceStatusCacheFactory CacheFactory
+@inject IConfiguration Configuration
+@inject IShiftService ShiftService
+
+@if (isLoading)
+{
+    <MProgressCircular Indeterminate="true" Class="mt-4" />
+}
+else
+{
+    <MRow>
+        <MCol Cols="12">
+            <MCard Class="mb-4">
+                <MCardText>
+                    <MRow>
+                        <MCol Md="3" Sm="6" Cols="12">
+                            <div class="d-flex align-center">
+                                <MIcon Color="primary" Size="36" Class="mr-4">mdi-calendar-clock</MIcon>
+                                <div>
+                                    <div class="text-subtitle-1 font-weight-bold">@T("CurrentShift")</div>
+                                    <div class="text-h6">@currentShift?.ShiftName</div>
+                                    <div class="text-caption">(@currentShift?.StartTime - @currentShift?.EndTime)</div>
+                                </div>
+                            </div>
+                        </MCol>
+                        <MCol Md="3" Sm="6" Cols="12">
+                            <div class="d-flex align-center">
+                                <MIcon Color="success" Size="36" Class="mr-4">mdi-package-variant</MIcon>
+                                <div>
+                                    <div class="text-subtitle-1 font-weight-bold">@T("JellyFeedingCount")</div>
+                                    <div class="text-h6">@totalJellyFeedingCount</div>
+                                </div>
+                            </div>
+                        </MCol>
+                        <MCol Md="3" Sm="6" Cols="12">
+                            <div class="d-flex align-center">
+                                <MIcon Color="info" Size="36" Class="mr-4">mdi-package-variant-closed</MIcon>
+                                <div>
+                                    <div class="text-subtitle-1 font-weight-bold">@T("PreChargeCount")</div>
+                                    <div class="text-h6">@totalPreChargeCount</div>
+                                </div>
+                            </div>
+                        </MCol>
+                        <MCol Md="3" Sm="6" Cols="12">
+                            <div class="d-flex align-center">
+                                <MIcon Color="@(totalYieldRate >= 95 ? "success" : "error")" Size="36" Class="mr-4">mdi-check-circle</MIcon>
+                                <div>
+                                    <div class="text-subtitle-1 font-weight-bold">@T("YieldRate")</div>
+                                    <div class="text-h6">@totalYieldRate.ToString("F2")%</div>
+                                </div>
+                            </div>
+                        </MCol>
+                    </MRow>
+                </MCardText>
+            </MCard>
+        </MCol>
+    </MRow>
+
+    <MRow>
+        <MCol Cols="12">
+            <div class="d-flex flex-wrap">
+                @foreach (var device in allDevices)
+                {
+                    var deviceStatus = deviceStatuses.FirstOrDefault(s => s.DeviceInfo?.Id == device.Id);
+                    var deviceState = deviceStatus != null ? (DeviceState)deviceStatus.Status : DeviceState.Offline;
+                    var statusInfo = deviceState.GetStatusInfo();
+                    var ppm = deviceStatus?.SmoothedPPM ?? 0;
+                    var yieldRate = CalculateDeviceYieldRate(deviceStatus);
+
+                    <MCard Width="300" Class="ma-2">
+                        <MCardTitle Class="pb-1">
+                            <span class="text-h6">@device.DeviceName</span>
+                        </MCardTitle>
+                        <MDivider></MDivider>
+                        <MCardText>
+                            <MRow>
+                                <MCol Cols="12">
+                                    <div class="d-flex align-center mb-2">
+                                        <div class="mr-2">@T("Status"):</div>
+                                        <MChip
+                                            Small
+                                            Label
+
+                                            >
+                                            @T(statusInfo.Name)
+                                        </MChip>
+                                    </div>
+                                </MCol>
+                                <MCol Cols="12">
+                                    <div class="d-flex align-center mb-2">
+                                        <div class="mr-2">@T("PPM"):</div>
+                                        <div class="font-weight-bold">@ppm.ToString("F1")</div>
+                                    </div>
+                                </MCol>
+                                <MCol Cols="12">
+                                    <div class="d-flex align-center">
+                                        <div class="mr-2">@T("YieldRate"):</div>
+                                        <div class="font-weight-bold @(yieldRate >= 95 ? "success--text" : "error--text")">
+                                            @yieldRate.ToString("F2")%
+                                        </div>
+                                    </div>
+                                </MCol>
+                            </MRow>
+                        </MCardText>
+                    </MCard>
+                }
+            </div>
+        </MCol>
+    </MRow>
+}
